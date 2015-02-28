@@ -11,6 +11,10 @@ class SudokuSolver
     @steps = []
   end
 
+  def step_to_s
+    @steps.map{|s| "[#{s[2]}]#{@grid.cell_position(s[0])}=#{s[1].to_s}"}.join("=>")
+  end
+
   def solve_brute_force
     cell_index, cell = @grid.first
     i=0
@@ -19,8 +23,7 @@ class SudokuSolver
       #puts @grid.cell_position(cell_index)+":"+cell_value.to_s
       unless cell_value == false
         if @grid.value_allowed?(cell_index, cell_value)
-          @steps << @grid.cell_position(cell_index)+"="+cell_value.to_s
-          puts @steps.join("=>")
+          @steps << [cell_index,cell_value,'solve_brute_force']
           i+=1
           cell.increment!
           cell_index, cell = @grid.next(cell_index)
@@ -29,11 +32,20 @@ class SudokuSolver
         end
       else
         if @steps.size>1 && @grid.first_not_finished
-          puts "\n\n-----false of : [#{@grid.cell_position(cell_index)},#{cell_value}]"+@steps.join("=>")+"\n\n"
+          puts "\n\n-----false of : [#{@grid.cell_position(cell_index)},#{cell_value}]"+step_to_s+"\n\n"
           puts @grid.to_s
         end
         cell.empty!
         cell_index, cell = @grid.pred(cell_index)
+        new_step = []
+        @steps.each{|s|
+          if s[0] != cell_index
+            new_step << s
+          else
+            break
+          end
+        }
+        @steps = new_step
       end
     end
     i
@@ -43,16 +55,13 @@ class SudokuSolver
     cell = @grid.cell_at(cell_index)
     cell.set_value(value)
     @grid.unset_left_value_of_cell_index(cell_index, value)
-    @steps << prefix+@grid.cell_position(cell_index)+"="+value.to_s
-    puts @steps.join("->")
+    @steps << [cell_index,value,prefix]
+    puts step_to_s
     puts @grid.to_s
   end
 
   def hidden_single
     #按照摒除法Hidden Single处理区块
-    updated = true
-    while updated
-      updated = false
       #挨个数字查找
       [*1..@grid.size].each { |test_value|
         [*0..@grid.size-1].each { |block_index|
@@ -75,7 +84,7 @@ class SudokuSolver
             if test_array.size == 1
               #puts test_array
               set_cell_value(test_array[0], test_value, "["+__method__.to_s+"]")
-              updated = true
+              return true
             elsif test_array.size == 0 && @grid.first_not_finished
               puts "\n\n-----false of : [#{test_value}], block:[#{block_index}]"+@steps.join("=>")+"\n\n"
               puts @grid.to_s
@@ -84,15 +93,11 @@ class SudokuSolver
           end
         }
       }
-    end
-    updated
+    false
   end
 
   def only_one
     #逐个按照行、列、单元格捞出唯一值
-    updated = true
-    while updated
-      updated = false
       (0..(@grid.size*@grid.size-1)).each do |index|
         cell_index, cell = index, @grid.cell_at(index)
         if cell.empty?
@@ -100,7 +105,7 @@ class SudokuSolver
           if not_allow_values.size==8
             value = ([*1..@grid.size] - not_allow_values)[0]
             set_cell_value(cell_index, value, "["+__method__.to_s+"]")
-            updated = true
+            return true
           elsif not_allow_values.size == 9 && @grid.first_not_finished
             puts "\n\n-----false of : [#{@grid.cell_position(cell_index)}]"+@steps.join("=>")+"\n\n"
             puts @grid.to_s
@@ -112,22 +117,125 @@ class SudokuSolver
           #   value = allow_values[0]
         end
       end
-    end
-    updated
+    false
   end
 
   def only_left_one
     #逐个按照行、列、单元格捞出唯一值
-    updated = true
-    while updated
-      updated = false
+
+      puts @grid.left_value_to_s
+
+      #行中有没有唯一的
+      (0..@grid.size-1).each do |row_index|
+        value_count = {}
+        @grid.rows[row_index].each{|cell|
+          if cell
+            cell.left_value.each{|value|
+              if value_count[value]
+                value_count[value] += 1
+              else
+                value_count[value] = 1
+              end
+            }
+          end
+        }
+        value_count.each{|k,v|
+          if v==1
+            @grid.rows[row_index].each_with_index { |cell, column_index|
+              if cell && cell.left_value.include?(k)
+                set_cell_value(@grid.rc_to_index(row_index,column_index), k, "["+__method__.to_s+",row]")
+                return true
+                puts @grid.left_value_to_s
+              end
+            }
+          end
+        }
+        #puts "#{row_index} : #{value_count.select{|k,v| v==1}.to_s}"
+      end
+
+      #return updated if updated
+
+      puts @grid.left_value_to_s
+      #列中有没有唯一的
+      (0..@grid.size-1).each do |column_index|
+        value_count = {}
+        (0..@grid.size-1).each do |row_index|
+          cell = @grid.cell_at_rc(row_index, column_index)
+          if cell
+            cell.left_value.each{|value|
+              if value_count[value]
+                value_count[value] += 1
+              else
+                value_count[value] = 1
+              end
+            }
+          end
+        end
+        value_count.each{|k,v|
+          if v==1
+            (0..@grid.size-1).each do |new_column_index|
+              (0..@grid.size-1).each do |row_index|
+                cell = @grid.cell_at_rc(row_index, new_column_index)
+                if cell && cell.left_value.include?(k)
+                  set_cell_value(@grid.rc_to_index(row_index,new_column_index), k, __method__.to_s+",column")
+                  return true
+                  puts @grid.left_value_to_s
+                end
+              end
+            end
+
+          end
+        }
+        #puts "#{row_index} : #{value_count.select{|k,v| v==1}.to_s}"
+      end
+
+      #return updated if updated
+
+      puts @grid.left_value_to_s
+      #区块中有没有唯一的
+      (0..@grid.size-1).each do |block_index|
+        min_row, max_row, min_column, max_column = @grid.block_range(block_index)
+        value_count = {}
+        (min_row..max_row).each do |row_index|
+          (min_column..max_column).each do |column_index|
+            cell = @grid.cell_at_rc(row_index, column_index)
+            if cell
+              cell.left_value.each{|value|
+                if value_count[value]
+                  value_count[value] += 1
+                else
+                  value_count[value] = 1
+                end
+              }
+            end
+          end
+        end
+
+        value_count.each{|k,v|
+          if v==1
+            (min_row..max_row).each do |row_index|
+              (min_column..max_column).each do |column_index|
+                cell = @grid.cell_at_rc(row_index, column_index)
+                if cell && cell.left_value.include?(k)
+                  set_cell_value(@grid.rc_to_index(row_index,column_index), k, "["+__method__.to_s+",block]")
+                  return true
+                  puts @grid.left_value_to_s
+                end
+              end
+            end
+
+          end
+        }
+        #puts "#{row_index} : #{value_count.select{|k,v| v==1}.to_s}"
+      end
+
       (0..(@grid.size*@grid.size-1)).each do |index|
         cell_index, cell = index, @grid.cell_at(index)
         if cell.empty?
           if cell.left_value.size==1
             value = cell.left_value[0]
-            set_cell_value(cell_index, value, "["+__method__.to_s+"]")
-            updated = true
+            set_cell_value(cell_index, value, __method__.to_s)
+            return true
           elsif cell.left_value.size==0
             puts "\n\n-----false of : [#{@grid.cell_position(cell_index)}]"+@steps.join("=>")+"\n\n"
             puts @grid.to_s
@@ -135,16 +243,16 @@ class SudokuSolver
           end
         end
       end
-    end
-    updated
+
+    false
   end
 
   def solve_mix
 
     updated = true
     while updated
-      #updated = hidden_single || only_one || only_left_one
-      updated = hidden_single || only_left_one
+      updated = hidden_single || only_one || only_left_one
+      #updated = hidden_single || only_left_one
     end
 
     #solve_brute_force
@@ -160,6 +268,7 @@ class SudokuSolver
   # Class implements methods for easier manipulation with grid
   class Grid
     attr_reader :size
+    attr_reader :rows
     attr_reader :sub_size
 
     def initialize()
@@ -389,7 +498,7 @@ class SudokuSolver
       @rows.each do |row|
         cindex = 1
         row.each { |cell|
-          if cell
+          if cell && cell.left_value.size>0
             output += "#{i.chr.to_s}#{cindex} : "
             output += cell.left_value.join(',')
             output += "\n"
@@ -486,6 +595,6 @@ raw_grid = sudoku.grid.to_s
 puts raw_grid
 #puts sudoku.grid.all_exist_value_of_cell(0)
 sudoku.solve_mix
+#sudoku.solve_brute_force
 #puts "finished!"
 puts raw_grid, sudoku.grid.to_s
-puts sudoku.grid.left_value_to_s
